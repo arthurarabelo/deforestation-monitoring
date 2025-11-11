@@ -34,12 +34,7 @@ int main(){
 
     fclose(file);
 
-    int dist[N];
-    dijkstra(forest_graph, 0, dist);
-
-    for(int i = 0; i < N; i++){
-        printf("Vértice %d: %d\n", i, dist[i]);
-    }
+    
 
     freeGraph(forest_graph);
 

@@ -6,8 +6,8 @@ def generate_graph(filename, N, M, image_name="graph.png"):
     # Create an undirected graph
     G = nx.Graph()
 
-    # Generate unique random IDs for cities
-    ids = random.sample(range(10, 30), N)
+    # Vertex IDs from 0 to N-1
+    ids = list(range(N))
 
     # Add nodes with attributes
     for city_id in ids:
@@ -15,7 +15,7 @@ def generate_graph(filename, N, M, image_name="graph.png"):
         city_type = random.choice([0, 1])  # 0 = regional, 1 = capital
         G.add_node(city_id, name=name, type=city_type)
 
-    # Generate edges (ensure no duplicates, no self-loops)
+    # Generate edges (no duplicates, no self-loops)
     edges = set()
     while len(edges) < M:
         u, v = random.sample(ids, 2)
@@ -40,7 +40,7 @@ def generate_graph(filename, N, M, image_name="graph.png"):
 
     # Draw the graph
     plt.figure(figsize=(10, 8))
-    pos = nx.spring_layout(G, seed=42)  # force-directed layout
+    pos = nx.spring_layout(G, seed=42)  # reproducible layout
 
     # Node colors: red for capitals, blue for regional
     colors = ["red" if G.nodes[n]["type"] == 1 else "skyblue" for n in G.nodes]
