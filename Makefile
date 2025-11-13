@@ -1,40 +1,38 @@
-# Compiler and flags
-CC = gcc
-CFLAGS = -Wall -Wextra -Iinclude -g
+CC       := gcc
+CFLAGS   := -std=c11 -Wall -Wextra -g -Iinclude
+LDFLAGS  :=
+LDLIBS   := -pthread
 
-# Directories
-SRC_DIR = src
-OBJ_DIR = obj
-BIN_DIR = bin
+SRC_DIR  := src
+OBJ_DIR  := obj
 
-# Files
-SRCS = $(wildcard $(SRC_DIR)/*.c)
-OBJS = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
-TARGET = $(BIN_DIR)/main
+COMMON_SRCS := $(SRC_DIR)/communication.c \
+               $(SRC_DIR)/utils.c \
+               $(SRC_DIR)/graph.c
+SERVER_SRCS := $(SRC_DIR)/server.c
+CLIENT_SRCS := $(SRC_DIR)/client.c
 
-# Default rule
-all: $(TARGET)
+COMMON_OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(COMMON_SRCS))
+SERVER_OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SERVER_SRCS)) $(COMMON_OBJS)
+CLIENT_OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(CLIENT_SRCS)) $(COMMON_OBJS)
 
-# Link object files into the final executable
-$(TARGET): $(OBJS)
-	@mkdir -p $(BIN_DIR)
-	$(CC) $(CFLAGS) $^ -o $@
-	@echo "✅ Build complete: $(TARGET)"
+TARGETS := server client
 
-# Compile each .c file into .o
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	@mkdir -p $(OBJ_DIR)
+.PHONY: all clean
+
+all: $(TARGETS)
+
+server: $(SERVER_OBJS)
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDLIBS) -o $@
+
+client: $(CLIENT_OBJS)
+	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDLIBS) -o $@
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Clean build artifacts
+$(OBJ_DIR):
+	@mkdir -p $@
+
 clean:
-	rm -rf $(OBJ_DIR) $(BIN_DIR)
-	@echo "🧹 Clean complete"
-
-# Run program
-run: all
-	@echo "🚀 Running program..."
-	@$(TARGET)
-
-# Phony targets (not actual files)
-.PHONY: all clean run
+	rm -rf $(OBJ_DIR) server client

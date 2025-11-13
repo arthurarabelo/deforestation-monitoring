@@ -1,61 +1,140 @@
 #include "communication.h"
 
-void send_telemetria(int sockfd, const struct addrinfo *ai, header_t *header, payload_telemetria_t* payload){
-    payload->total = htons(payload->total);
-    for(int i = 0; i < MAX_SIZE_DADOS_TELEMETRIA; i++){
-        payload->dados[i].id_cidade = htons(payload->dados[i].id_cidade);
-        payload->dados[i].status = htons(payload->dados[i].status);
+void host_to_network_long_header(header_t *header){
+    header->tamanho = htonl(header->tamanho);
+    header->tipo = htonl(header->tipo);
+}
+
+void network_to_host_long_header(header_t *header){
+    header->tamanho = ntohl(header->tamanho);
+    header->tipo = ntohl(header->tipo);
+}
+
+void host_to_network_long_payload(void *payload, MessageType type){
+    switch (type) {
+        case MSG_TELEMETRIA: {
+            payload_telemetria_t *p = (payload_telemetria_t*) payload;
+            for(int i = 0; i < MAX_SIZE_DADOS_TELEMETRIA; i++){
+                p->dados[i].id_cidade = htonl(p->dados[i].id_cidade);
+                p->dados[i].status = htonl(p->dados[i].status);
+            }
+            p->total = htonl(p->total);
+            break;
+        }
+        case MSG_ACK: {
+            payload_ack_t *p = (payload_ack_t*) payload;
+            p->status = htonl(p->status);
+            break;
+        }
+        case MSG_EQUIPE_DRONE: {
+            payload_equipe_drone_t *p = (payload_equipe_drone_t*) payload;
+            p->id_cidade = htonl(p->id_cidade);
+            p->id_equipe = htonl(p->id_equipe);
+            break;
+        }
+        case MSG_CONCLUSAO: {
+            payload_conclusao_t *p = (payload_conclusao_t*) payload;
+            p->id_cidade = htonl(p->id_cidade);
+            p->id_equipe = htonl(p->id_equipe);
+            break;
+        }
+    }
+}
+
+void network_to_host_long_payload(void *payload, MessageType type){
+    switch (type) {
+        case MSG_TELEMETRIA: {
+            payload_telemetria_t *p = (payload_telemetria_t*) payload;
+            for(int i = 0; i < MAX_SIZE_DADOS_TELEMETRIA; i++){
+                p->dados[i].id_cidade = ntohl(p->dados[i].id_cidade);
+                p->dados[i].status = ntohl(p->dados[i].status);
+            }
+            p->total = ntohl(p->total);
+            break;
+        }
+        case MSG_ACK: {
+            payload_ack_t *p = (payload_ack_t*) payload;
+            p->status = ntohl(p->status);
+            break;
+        }
+        case MSG_EQUIPE_DRONE: {
+            payload_equipe_drone_t *p = (payload_equipe_drone_t*) payload;
+            p->id_cidade = ntohl(p->id_cidade);
+            p->id_equipe = ntohl(p->id_equipe);
+            break;
+        }
+        case MSG_CONCLUSAO: {
+            payload_conclusao_t *p = (payload_conclusao_t*) payload;
+            p->id_cidade = ntohl(p->id_cidade);
+            p->id_equipe = ntohl(p->id_equipe);
+            break;
+        }
+    }
+}
+
+void send_message(int sockfd, struct sockaddr_in *dest, MessageType type, void *payload, size_t payload_size){
+    header_t header;
+    header.tipo = type;
+    header.tamanho = payload_size;
+    
+    size_t total_size = sizeof(header_t) + payload_size;
+    uint8_t buffer[total_size];
+    
+    host_to_network_long_header(&header);
+    host_to_network_long_payload(payload, type);
+
+    // Copia o header e o payload pro buffer
+    memcpy(buffer, &header, sizeof(header_t));
+    memcpy(buffer + sizeof(header_t), payload, payload_size);
+
+    // Envia tudo num único datagrama
+    sendto(sockfd, buffer, total_size, 0, (struct sockaddr*) dest, sizeof(*dest));
+
+    network_to_host_long_payload(payload, type);
+}
+
+void receive_message(int sockfd) {
+    uint8_t buffer[MAX_BUFFER_SIZE];
+    struct sockaddr_in src;
+    socklen_t addrlen = sizeof(src);
+
+    unsigned long int n = recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr*)&src, &addrlen);
+    if (n < sizeof(header_t)){
+        /* TODO: message incomplete */
     }
 
-    char buf[sizeof(header_t) + sizeof(payload_telemetria_t)];
-    memcpy(buf, header, sizeof(header_t));
-    memcpy(buf + sizeof(header), payload, sizeof(payload_telemetria_t));
+    header_t *header = (header_t*) buffer;
+    void *payload = buffer + sizeof(header_t);
 
-    sendto(sockfd, buf, strlen(buf), 0, ai->ai_addr, ai->ai_addrlen);
+    /* TODO: check if the message or some part of it was not lost using the header->tamanho */
 
-    payload->total = ntohs(payload->total);
-    for(int i = 0; i < MAX_SIZE_DADOS_TELEMETRIA; i++){
-        payload->dados[i].id_cidade = ntohs(payload->dados[i].id_cidade);
-        payload->dados[i].status = ntohs(payload->dados[i].status);
+    printf("Recebido tipo=%d, tamanho=%d bytes\n", header->tipo, header->tamanho);
+
+    switch (header->tipo) {
+        case MSG_TELEMETRIA: {
+            payload_telemetria_t *p = (payload_telemetria_t*) payload;
+            printf("Total: %d\n", p->total);
+            for (int i = 0; i < p->total; i++)
+                printf("Cidade %d, status %d\n", p->dados[i].id_cidade, p->dados[i].status);
+            break;
+        }
+        case MSG_ACK: {
+            payload_ack_t *p = (payload_ack_t*) payload;
+            printf("ACK: %d\n", p->status);
+            break;
+        }
+        case MSG_EQUIPE_DRONE: {
+            payload_equipe_drone_t *p = (payload_equipe_drone_t*) payload;
+            printf("Equipe %d enviada à cidade %d\n", p->id_equipe, p->id_cidade);
+            break;
+        }
+        case MSG_CONCLUSAO: {
+            payload_conclusao_t *p = (payload_conclusao_t*) payload;
+            printf("Equipe %d concluiu ajuda em cidade %d\n", p->id_equipe, p->id_cidade);
+            break;
+        }
+        default:
+            printf("Tipo desconhecido!\n");
+            break;
     }
-}
-
-void send_ack(int sockfd, const struct addrinfo *ai, header_t *header, payload_ack_t* payload){
-    payload->status = htons(payload->status);
-
-    char buf[sizeof(header_t) + sizeof(payload_ack_t)];
-    memcpy(buf, header, sizeof(header_t));
-    memcpy(buf + sizeof(header), payload, sizeof(payload_ack_t));
-
-    sendto(sockfd, buf, strlen(buf), 0, ai->ai_addr, ai->ai_addrlen);
-
-    payload->status = ntohs(payload->status);
-}
-
-void send_drone(int sockfd, const struct addrinfo *ai, header_t *header, payload_equipe_drone_t* payload){
-    payload->id_cidade = htons(payload->id_cidade);
-    payload->id_equipe = htons(payload->id_equipe);
-
-    char buf[sizeof(header_t) + sizeof(payload_equipe_drone_t)];
-    memcpy(buf, header, sizeof(header_t));
-    memcpy(buf + sizeof(header), payload, sizeof(payload_equipe_drone_t));
-
-    sendto(sockfd, buf, strlen(buf), 0, ai->ai_addr, ai->ai_addrlen);
-
-    payload->id_cidade = ntohs(payload->id_cidade);
-    payload->id_equipe = ntohs(payload->id_equipe);
-}
-
-void send_conclusao(int sockfd, const struct addrinfo *ai, header_t *header, payload_conclusao_t* payload){
-    payload->id_cidade = htons(payload->id_cidade);
-    payload->id_equipe = htons(payload->id_equipe);
-
-    char buf[sizeof(header_t) + sizeof(payload_conclusao_t)];
-    memcpy(buf, header, sizeof(header_t));
-    memcpy(buf + sizeof(header), payload, sizeof(payload_conclusao_t));
-
-    sendto(sockfd, buf, strlen(buf), 0, ai->ai_addr, ai->ai_addrlen);
-
-    payload->id_cidade = ntohs(payload->id_cidade);
-    payload->id_equipe = ntohs(payload->id_equipe);
 }
