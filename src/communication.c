@@ -1,13 +1,22 @@
 #include "communication.h"
 
-void host_to_network_long_header(header_t *header){
-    header->tamanho = htonl(header->tamanho);
-    header->tipo = htonl(header->tipo);
+// get sockaddr, IPv4 or IPv6:
+void *get_in_addr(struct sockaddr *sa) {
+	if (sa->sa_family == AF_INET) {
+		return &(((struct sockaddr_in*)sa)->sin_addr);
+	}
+
+	return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
-void network_to_host_long_header(header_t *header){
-    header->tamanho = ntohl(header->tamanho);
-    header->tipo = ntohl(header->tipo);
+void host_to_network_short_header(header_t *header){
+    header->tamanho = htons(header->tamanho);
+    header->tipo = htons(header->tipo);
+}
+
+void network_to_host_short_header(header_t *header){
+    header->tamanho = ntohs(header->tamanho);
+    header->tipo = ntohs(header->tipo);
 }
 
 void host_to_network_long_payload(void *payload, MessageType type){
@@ -72,15 +81,16 @@ void network_to_host_long_payload(void *payload, MessageType type){
     }
 }
 
-void send_message(int sockfd, struct sockaddr_in *dest, MessageType type, void *payload, size_t payload_size){
+void send_message(int sockfd, struct addrinfo *p, MessageType type, void *payload, size_t payload_size){
+    char buffer[MAX_BUFFER_SIZE];
+	unsigned long int numbytes;
     header_t header;
     header.tipo = type;
     header.tamanho = payload_size;
+    size_t total_size = sizeof(header) + payload_size;
     
-    size_t total_size = sizeof(header_t) + payload_size;
-    uint8_t buffer[total_size];
-    
-    host_to_network_long_header(&header);
+    // prevent endianess problemss
+    host_to_network_short_header(&header);
     host_to_network_long_payload(payload, type);
 
     // Copia o header e o payload pro buffer
@@ -88,53 +98,80 @@ void send_message(int sockfd, struct sockaddr_in *dest, MessageType type, void *
     memcpy(buffer + sizeof(header_t), payload, payload_size);
 
     // Envia tudo num único datagrama
-    sendto(sockfd, buffer, total_size, 0, (struct sockaddr*) dest, sizeof(*dest));
+    if((numbytes = sendto(sockfd, buffer, total_size, 0, (struct sockaddr*) p->ai_addr, p->ai_addrlen)) == (long unsigned int) -1){
+        perror("sendto");
+		exit(1);
+    }
+
+	printf("talker: sent %ld bytes\n", numbytes);
 
     network_to_host_long_payload(payload, type);
 }
 
 void receive_message(int sockfd) {
-    uint8_t buffer[MAX_BUFFER_SIZE];
-    struct sockaddr_in src;
-    socklen_t addrlen = sizeof(src);
+    char buffer[MAX_BUFFER_SIZE];
+    struct sockaddr_in their_addr;
+    socklen_t addrlen = sizeof(their_addr);
+	unsigned long int numbytes;
+    char s[INET6_ADDRSTRLEN];
 
-    unsigned long int n = recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr*)&src, &addrlen);
-    if (n < sizeof(header_t)){
-        /* TODO: message incomplete */
+    if((numbytes = recvfrom(sockfd, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr*)&their_addr, &addrlen)) == (long unsigned int) -1){
+        perror("recvfrom");
+		exit(1);
     }
 
-    header_t *header = (header_t*) buffer;
-    void *payload = buffer + sizeof(header_t);
+	printf("listener: got packet from %s\n", inet_ntop(their_addr.sin_family, get_in_addr((struct sockaddr *)&their_addr), s, sizeof s));
+	printf("listener: packet is %ld bytes long\n", numbytes);
+
+    if (numbytes < sizeof(header_t)){
+        /* TODO: message incomplete for sure */
+    }
+
+    header_t header;
+    memcpy(&header, buffer, sizeof(header_t));
+    network_to_host_short_header(&header);
+
+    printf("Recebido tipo=%d, tamanho=%d bytes\n", header.tipo, header.tamanho);
 
     /* TODO: check if the message or some part of it was not lost using the header->tamanho */
-
-    printf("Recebido tipo=%d, tamanho=%d bytes\n", header->tipo, header->tamanho);
-
-    switch (header->tipo) {
+    
+    switch (header.tipo) {
         case MSG_TELEMETRIA: {
-            payload_telemetria_t *p = (payload_telemetria_t*) payload;
-            printf("Total: %d\n", p->total);
-            for (int i = 0; i < p->total; i++)
-                printf("Cidade %d, status %d\n", p->dados[i].id_cidade, p->dados[i].status);
+            payload_telemetria_t p;
+            network_to_host_long_payload(&p, header.tipo);
+            memcpy(&p, buffer + sizeof(header_t), header.tamanho);
+
+            printf("Total: %d\n", p.total);
+            for (int i = 0; i < p.total; i++)
+                printf("Cidade %d, status %d\n", p.dados[i].id_cidade, p.dados[i].status);
             break;
         }
         case MSG_ACK: {
-            payload_ack_t *p = (payload_ack_t*) payload;
-            printf("ACK: %d\n", p->status);
+            payload_ack_t p;
+            network_to_host_long_payload(&p, header.tipo);
+            memcpy(&p, buffer + sizeof(header_t), header.tamanho);
+
+            printf("ACK: %d\n", p.status);
             break;
         }
         case MSG_EQUIPE_DRONE: {
-            payload_equipe_drone_t *p = (payload_equipe_drone_t*) payload;
-            printf("Equipe %d enviada à cidade %d\n", p->id_equipe, p->id_cidade);
+            payload_equipe_drone_t p;
+            network_to_host_long_payload(&p, header.tipo);
+            memcpy(&p, buffer + sizeof(header_t), header.tamanho);
+
+            printf("Equipe %d enviada à cidade %d\n", p.id_equipe, p.id_cidade);
             break;
         }
         case MSG_CONCLUSAO: {
-            payload_conclusao_t *p = (payload_conclusao_t*) payload;
-            printf("Equipe %d concluiu ajuda em cidade %d\n", p->id_equipe, p->id_cidade);
+            payload_conclusao_t p;
+            network_to_host_long_payload(&p, header.tipo);
+            memcpy(&p, buffer + sizeof(header_t), header.tamanho);
+
+            printf("Equipe %d concluiu ajuda em cidade %d\n", p.id_equipe, p.id_cidade);
             break;
         }
         default:
             printf("Tipo desconhecido!\n");
             break;
-    }
+    }    
 }

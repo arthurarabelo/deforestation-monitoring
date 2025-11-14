@@ -54,14 +54,15 @@ typedef struct {
 
 #define MAX_BUFFER_SIZE (sizeof(header_t) + sizeof(payload_telemetria_t))
 
+void *get_in_addr(struct sockaddr *sa);
 
-void host_to_network_long_header(header_t *header);
-void network_to_host_long_header(header_t *header);
+void host_to_network_short_header(header_t *header);
+void network_to_host_short_header(header_t *header);
 
 void host_to_network_long_payload(void *payload, MessageType type);
 void network_to_host_long_payload(void *payload, MessageType type);
 
-void send_message(int sockfd, struct sockaddr_in *dest, MessageType tipo, void *payload, size_t payload_size);
+void send_message(int sockfd, struct addrinfo *p, MessageType tipo, void *payload, size_t payload_size);
 
 void receive_message(int sockfd);
 

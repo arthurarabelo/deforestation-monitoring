@@ -1,6 +1,8 @@
 #include "communication.h"
 #include "utils.h"
 
+/* TODO: move this file to root */
+
 #define MAX_CITY_NAME 50
 #define SERVERPORT "8080"
 
@@ -8,8 +10,8 @@ int main(int argc, char *argv[]){
     int sockfd;
 	struct addrinfo hints, *servinfo, *p;
 	int rv;
-	int numbytes;
-    char *protocol;
+	// int numbytes;
+    char *protocol, *server_ip;
 
     if (argc != 2) {
         fprintf(stderr, "how to use it: %s <v4|v6>\n", argv[0]);
@@ -23,8 +25,10 @@ int main(int argc, char *argv[]){
 	hints.ai_flags = AI_PASSIVE; // use my IP
     if(strcmp(protocol, "v4") == 0){
         hints.ai_family = AF_INET;
+        server_ip = "127.0.0.1";
     } else if(strcmp(protocol, "v6") == 0){
         hints.ai_family = AF_INET6;
+        server_ip = "::1";
     } else {
         hints.ai_family = AF_UNSPEC; // use IPv4 or IPv6, whichever
     }
@@ -57,7 +61,7 @@ int main(int argc, char *argv[]){
 
     fclose(file);
 
-    rv = getaddrinfo(argv[1], SERVERPORT, &hints, &servinfo);
+    rv = getaddrinfo(server_ip, SERVERPORT, &hints, &servinfo);
 	if (rv != 0) {
 		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
 		return 1;
@@ -78,16 +82,15 @@ int main(int argc, char *argv[]){
 		fprintf(stderr, "talker: failed to create socket\n");
 		return 2;
 	}
+    
+    payload_ack_t payload = {0};
+    header_t header;
+    header.tamanho = sizeof(payload);
+    header.tipo = 2;
+    
+    send_message(sockfd, p, header.tipo, &payload, header.tamanho);
 
-	if ((numbytes = sendto(sockfd, argv[2], strlen(argv[2]), 0,
-			 p->ai_addr, p->ai_addrlen)) == -1) {
-		perror("talker: sendto");
-		exit(1);
-	}
-
-	freeaddrinfo(servinfo);
-
-	printf("talker: sent %d bytes to %s\n", numbytes, argv[1]);
+    freeaddrinfo(servinfo);
 	close(sockfd);
 
 	return 0;
