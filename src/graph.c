@@ -12,6 +12,7 @@ void setVertexInfo(Graph* graph, int vertex_index, char* city_name, int city_typ
     graph->vertices[vertex_index].name = city_name;
     graph->vertices[vertex_index].type = city_type;
     graph->vertices[vertex_index].id_cidade = city_id;
+    graph->vertices[vertex_index].available = 1;
 }
 
 // add an edge (u -> v) with given weight

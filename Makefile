@@ -7,14 +7,16 @@ SRC_DIR  := src
 OBJ_DIR  := obj
 
 COMMON_SRCS := $(SRC_DIR)/communication.c \
+               $(SRC_DIR)/alertQueue.c \
+               $(SRC_DIR)/answerQueue.c \
                $(SRC_DIR)/utils.c \
                $(SRC_DIR)/graph.c
-SERVER_SRCS := $(SRC_DIR)/server.c
-CLIENT_SRCS := $(SRC_DIR)/client.c
+SERVER_SRCS := server.c
+CLIENT_SRCS := client.c
 
 COMMON_OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(COMMON_SRCS))
-SERVER_OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SERVER_SRCS)) $(COMMON_OBJS)
-CLIENT_OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(CLIENT_SRCS)) $(COMMON_OBJS)
+SERVER_OBJS := $(OBJ_DIR)/server.o $(COMMON_OBJS)
+CLIENT_OBJS := $(OBJ_DIR)/client.o $(COMMON_OBJS)
 
 TARGETS := server client
 
@@ -29,6 +31,9 @@ client: $(CLIENT_OBJS)
 	$(CC) $(CFLAGS) $^ $(LDFLAGS) $(LDLIBS) -o $@
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/%.o: %.c | $(OBJ_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OBJ_DIR):

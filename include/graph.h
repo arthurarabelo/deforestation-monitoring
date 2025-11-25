@@ -15,6 +15,7 @@ typedef struct vertex {
     char* name; // name of the city
     int type; // 0 = regional, 1 = capital
     int id_cidade; // identificador da cidade
+    int available; // 0 = unavailable, 1 = available
     Edge* head;
 } Vertex;
 

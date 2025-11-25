@@ -108,38 +108,47 @@ void send_message(int sockfd, struct addrinfo *p, MessageType type, void *payloa
     network_to_host_long_payload(payload, type);
 }
 
-void receive_message(int sockfd) {
+void receive_message(int sockfd, struct sockaddr_in *their_addr, socklen_t *addrlen, answer_t *answer) {
     char buffer[MAX_BUFFER_SIZE];
-    struct sockaddr_in their_addr;
-    socklen_t addrlen = sizeof(their_addr);
 	unsigned long int numbytes;
     char s[INET6_ADDRSTRLEN];
 
-    if((numbytes = recvfrom(sockfd, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr*)&their_addr, &addrlen)) == (long unsigned int) -1){
+    if((numbytes = recvfrom(sockfd, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr *) their_addr, addrlen)) == (long unsigned int) -1){
         perror("recvfrom");
 		exit(1);
     }
 
-	printf("listener: got packet from %s\n", inet_ntop(their_addr.sin_family, get_in_addr((struct sockaddr *)&their_addr), s, sizeof s));
+	printf("listener: got packet from %s\n", inet_ntop(their_addr->sin_family, get_in_addr((struct sockaddr *) their_addr), s, sizeof s));
 	printf("listener: packet is %ld bytes long\n", numbytes);
 
     if (numbytes < sizeof(header_t)){
         /* TODO: message incomplete for sure */
+        answer->ack = 0;
+        return;
     }
 
     header_t header;
     memcpy(&header, buffer, sizeof(header_t));
     network_to_host_short_header(&header);
-
+    
     printf("Recebido tipo=%d, tamanho=%d bytes\n", header.tipo, header.tamanho);
+    answer->h = header;
 
     /* TODO: check if the message or some part of it was not lost using the header->tamanho */
+    if(header.tamanho > numbytes - sizeof(header_t)){
+        fprintf(stderr, "Pacotes foram perdidos na mensagem: esperado %d, recebido %zd\n", header.tamanho, numbytes - sizeof(header_t));
+        answer->ack = 0;
+        return;
+    }
     
     switch (header.tipo) {
         case MSG_TELEMETRIA: {
             payload_telemetria_t p;
             network_to_host_long_payload(&p, header.tipo);
             memcpy(&p, buffer + sizeof(header_t), header.tamanho);
+
+            answer->p_telemetry = p;
+            answer->ack = 1;
 
             printf("Total: %d\n", p.total);
             for (int i = 0; i < p.total; i++)
@@ -151,6 +160,9 @@ void receive_message(int sockfd) {
             network_to_host_long_payload(&p, header.tipo);
             memcpy(&p, buffer + sizeof(header_t), header.tamanho);
 
+            answer->p_ack = p;
+            answer->ack = 1;
+
             printf("ACK: %d\n", p.status);
             break;
         }
@@ -159,6 +171,9 @@ void receive_message(int sockfd) {
             network_to_host_long_payload(&p, header.tipo);
             memcpy(&p, buffer + sizeof(header_t), header.tamanho);
 
+            answer->p_drone = p;
+            answer->ack = 1;
+
             printf("Equipe %d enviada à cidade %d\n", p.id_equipe, p.id_cidade);
             break;
         }
@@ -166,6 +181,9 @@ void receive_message(int sockfd) {
             payload_conclusao_t p;
             network_to_host_long_payload(&p, header.tipo);
             memcpy(&p, buffer + sizeof(header_t), header.tamanho);
+            
+            answer->p_conclusion = p;
+            answer->ack = 1;
 
             printf("Equipe %d concluiu ajuda em cidade %d\n", p.id_equipe, p.id_cidade);
             break;
