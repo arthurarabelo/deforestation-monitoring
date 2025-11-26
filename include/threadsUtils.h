@@ -4,23 +4,25 @@
 #include "communication.h"
 #include "answerQueue.h"
 #include <pthread.h>
+#include <stdint.h>
 
-pthread_mutex_t mutex_build_telemetry;
-pthread_mutex_t mutex_ack_telemetry;
-pthread_mutex_t mutex_ack_conclusao;
-pthread_mutex_t mutex_equipe_drone;
-pthread_mutex_t mutex_t4_state;
-pthread_mutex_t mutex_t3_t4;
+// External declarations (definitions are in threadsUtils.c)
+extern pthread_mutex_t mutex_build_telemetry;
+extern pthread_mutex_t mutex_ack_telemetry;
+extern pthread_mutex_t mutex_ack_conclusao;
+extern pthread_mutex_t mutex_equipe_drone;
+extern pthread_mutex_t mutex_t4_state;
+extern pthread_mutex_t mutex_t3_t4;
 
-pthread_cond_t cond_ack_telemetry;
-pthread_cond_t cond_ack_conclusao;
-pthread_cond_t cond_equipe_drone;
-pthread_cond_t cond_t3_t4;
-pthread_cond_t cond_t4_t3;
+extern pthread_cond_t cond_ack_telemetry;
+extern pthread_cond_t cond_ack_conclusao;
+extern pthread_cond_t cond_equipe_drone;
+extern pthread_cond_t cond_t3_t4;
+extern pthread_cond_t cond_t4_t3;
 
-uint16_t mission_available = 0;
-uint16_t mission_completed = 0;
-uint16_t th4_busy = 0;   // 0 = livre, 1 = ocupada
+extern uint16_t mission_available;
+extern uint16_t mission_completed;
+extern uint16_t th4_busy;   // 0 = livre, 1 = ocupada
 
 typedef struct {
     int *arr;
@@ -65,6 +67,6 @@ void* send_telemetry(void* data);
 
 void* confirm_crew_received(void* data);
 
-void* simulate_drones(void* data);
+void* simulate_drones(void* _);
 
 #endif

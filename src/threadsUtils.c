@@ -1,5 +1,23 @@
 #include "threadsUtils.h"
 
+// Definitions of global variables
+pthread_mutex_t mutex_build_telemetry;
+pthread_mutex_t mutex_ack_telemetry;
+pthread_mutex_t mutex_ack_conclusao;
+pthread_mutex_t mutex_equipe_drone;
+pthread_mutex_t mutex_t4_state;
+pthread_mutex_t mutex_t3_t4;
+
+pthread_cond_t cond_ack_telemetry;
+pthread_cond_t cond_ack_conclusao;
+pthread_cond_t cond_equipe_drone;
+pthread_cond_t cond_t3_t4;
+pthread_cond_t cond_t4_t3;
+
+uint16_t mission_available = 0;
+uint16_t mission_completed = 0;
+uint16_t th4_busy = 0;   // 0 = livre, 1 = ocupada
+
 void* foward_message(void* data){
     args_dispatcher* args = (args_dispatcher *) data;
 
@@ -132,9 +150,9 @@ void* confirm_crew_received(void* data){
             pthread_cond_wait(&cond_equipe_drone, &mutex_equipe_drone);
         }
 
-        answer_t* answer = pop_answer(args->answer_queue_t3_drone);
-        id_cidade = answer->p_drone.id_cidade;
-        id_equipe = answer->p_drone.id_equipe;
+        answer_node_t* answer = pop_answer(args->answer_queue_t3_drone);
+        id_cidade = answer->data->p_drone.id_cidade;
+        id_equipe = answer->data->p_drone.id_equipe;
         free(answer);
 
         pthread_mutex_unlock(&mutex_equipe_drone);
@@ -184,7 +202,9 @@ void* confirm_crew_received(void* data){
     return NULL;
 }
 
-void* simulate_drones(void* data){
+void* simulate_drones(void* _){
+
+    (void)_;
 
     while(1){
         /* th4 and th3 communication - BEGIN */

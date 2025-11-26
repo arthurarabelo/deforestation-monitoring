@@ -9,6 +9,7 @@ OBJ_DIR  := obj
 COMMON_SRCS := $(SRC_DIR)/communication.c \
                $(SRC_DIR)/alertQueue.c \
                $(SRC_DIR)/answerQueue.c \
+               $(SRC_DIR)/threadsUtils.c \
                $(SRC_DIR)/utils.c \
                $(SRC_DIR)/graph.c
 SERVER_SRCS := server.c

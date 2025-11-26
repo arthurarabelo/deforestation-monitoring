@@ -112,7 +112,6 @@ int main(int argc, char *argv[]){
     args_t3 data_t3 = {sockfd, p, &p_ack_drone, &answer_queue_t3_ack, &answer_queue_t3_drone};
     pthread_create(&thread3, NULL, &confirm_crew_received, &data_t3);
     
-    /* TODO: implement th4 */
     pthread_create(&thread4, NULL, &simulate_drones, NULL);
 
     /* Waits for threads to finish */
