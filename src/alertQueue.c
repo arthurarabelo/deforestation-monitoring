@@ -9,12 +9,30 @@ int is_alert_queue_empty(alert_queue_t* q) {
     return q->front == NULL; 
 }
 
-alert_event_t* peek_alert(alert_queue_t* q) {
+alert_event_t* pop_alert(alert_queue_t* q) {
     if (is_alert_queue_empty(q)) {
         printf("Queue is empty\n");
-        return NULL; // return some default value or handle
-                   // error differently
+        return NULL;
     }
+    
+    alert_event_t* node = q->front;
+    q->front = q->front->next;
+
+    if (q->front == NULL) {
+        q->rear = NULL;
+    }
+
+    node->next = NULL;
+
+    return node;
+}
+
+alert_event_t* peek_alert(alert_queue_t* q){
+    if (is_alert_queue_empty(q)) {
+        printf("Queue is empty\n");
+        return NULL;
+    }
+    
     return q->front;
 }
 

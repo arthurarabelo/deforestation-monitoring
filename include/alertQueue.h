@@ -25,7 +25,10 @@ void initialize_alert_queue(alert_queue_t* q);
 // Function to check if the queue is empty
 int is_alert_queue_empty(alert_queue_t* q);
 
-// Function to get the element at the front of the queue (Peek operation)
+// Function to get the element at the front of the queue (pop operation)
+alert_event_t* pop_alert(alert_queue_t* q);
+
+// Function to get the element at the front of the queue (peek operation)
 alert_event_t* peek_alert(alert_queue_t* q);
 
 // Function to check if element is already on the queue

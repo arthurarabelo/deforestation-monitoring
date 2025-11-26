@@ -9,13 +9,21 @@ int is_answer_queue_empty(answer_queue_t* q) {
     return q->front == NULL; 
 }
 
-answer_node_t* peek_answer(answer_queue_t* q) {
+answer_node_t* pop_answer(answer_queue_t* q) {
     if (is_answer_queue_empty(q)) {
         printf("Queue is empty\n");
-        return NULL; // return some default value or handle
-                   // error differently
+        return NULL;
     }
-    return q->front;
+    answer_node_t* node = q->front;
+    q->front = q->front->next;
+
+    if (q->front == NULL) {
+        q->rear = NULL;
+    }
+
+    node->next = NULL;
+
+    return node;
 }
 
 void enqueue_answer(answer_queue_t* q, answer_t* data) {

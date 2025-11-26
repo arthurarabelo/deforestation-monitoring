@@ -12,9 +12,9 @@
 #include <errno.h>
 #include <unistd.h>
 #include <string.h>
-#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 // Forward declarations
 struct addrinfo;

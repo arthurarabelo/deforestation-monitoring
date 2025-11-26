@@ -11,8 +11,6 @@ int main(int argc, char *argv[]) {
 	struct sockaddr_in their_addr;
     socklen_t addr_len = sizeof(their_addr);
 	char *protocol, *server_ip;
-	// char s[INET6_ADDRSTRLEN];y
-	// long unsigned int numbytes;
     
     if (argc != 2) {
         fprintf(stderr, "how to use it: %s <v4|v6>\n", argv[0]);
@@ -103,7 +101,8 @@ int main(int argc, char *argv[]) {
         receive_message(sockfd, &their_addr, &addr_len, &msg_recvd);
     
         if(msg_recvd.ack == 0){
-            /* TODO: wait for client to transmit again */
+            /* keeps listening untill client transmit again */
+            continue;
         } else {
             switch (msg_recvd.h.tipo) {
                 case MSG_TELEMETRIA: {
@@ -124,15 +123,23 @@ int main(int argc, char *argv[]) {
                             send_message(sockfd, p, MSG_EQUIPE_DRONE, &equipe, sizeof(payload_equipe_drone_t));
                         }
                     }
+                    
                     break;
                 }
                 case MSG_ACK: {
-                    /* TODO: if the ACK is ACK_EQUIPE_DRONE, unqueue the alerts first element (drone was already received) */
-                    /* TODO: if the ACK is ACK_CONCLUSAO, mark the crew as available on its corresponding vertex */
-    
+                    /* if the ACK is ACK_EQUIPE_DRONE, unqueue the alerts first element (drone was already received) */
+                    if(msg_recvd.p_ack.status == 1){
+                        alert_event_t* current_alert = pop_alert(&alerts);
+                        if(current_alert){
+                            free(current_alert);
+                        }
+                    }
                     break;
                 }
                 case MSG_CONCLUSAO: {
+                    /* mark the crew as available on its corresponding vertex */
+                    int crew = msg_recvd.p_conclusion.id_equipe;
+                    forest_graph->vertices[crew].available = 1;
                     break;
                 }
                 default:

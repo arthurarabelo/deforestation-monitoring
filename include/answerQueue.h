@@ -24,8 +24,8 @@ void initialize_answer_queue(answer_queue_t* q);
 // Function to check if the queue is empty
 int is_answer_queue_empty(answer_queue_t* q);
 
-// Function to get the element at the front of the queue (Peek operation)
-answer_node_t* peek_answer(answer_queue_t* q);
+// Function to get the element at the front of the queue (pop operation)
+answer_node_t* pop_answer(answer_queue_t* q);
 
 // Function to add an element to the queue (Enqueue operation)
 void enqueue_answer(answer_queue_t* q, answer_t* data);
