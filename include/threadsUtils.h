@@ -3,6 +3,7 @@
 
 #include "communication.h"
 #include "answerQueue.h"
+#include "graph.h"
 #include <pthread.h>
 #include <stdint.h>
 
@@ -36,6 +37,7 @@ typedef struct {
     struct addrinfo *p;
     payload_telemetria_t *payload;
     answer_queue_t* ack_queue;
+    Graph* graph;
 } args_t2;
 
 typedef struct {
@@ -44,13 +46,19 @@ typedef struct {
     payload_ack_t *payload;
     answer_queue_t* answer_queue_t3_ack;
     answer_queue_t* answer_queue_t3_drone;
+    Graph* graph;
 } args_t3;
+
+typedef struct {
+    Graph* graph;
+} args_t4;
 
 typedef struct {
     int sockfd;
     answer_queue_t* answer_queue_t2;
     answer_queue_t* answer_queue_t3_ack;
     answer_queue_t* answer_queue_t3_drone;
+    Graph* graph;
 } args_dispatcher;
 
 /* dispatcher thread 
@@ -67,6 +75,6 @@ void* send_telemetry(void* data);
 
 void* confirm_crew_received(void* data);
 
-void* simulate_drones(void* _);
+void* simulate_drones(void* data);
 
 #endif

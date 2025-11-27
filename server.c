@@ -17,6 +17,51 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+    
+    protocol = argv[1];
+    
+	memset(&hints, 0, sizeof hints);
+	hints.ai_socktype = SOCK_DGRAM;
+	hints.ai_flags = AI_PASSIVE; // use my IP
+    if(strcmp(protocol, "v4") == 0){
+        hints.ai_family = AF_INET;
+		server_ip = "127.0.0.1";
+    } else if(strcmp(protocol, "v6") == 0){
+        hints.ai_family = AF_INET6;
+		server_ip = "::1";
+    } else {
+        hints.ai_family = AF_UNSPEC; // use IPv4 or IPv6, whichever
+    }
+    
+	if ((rv = getaddrinfo(server_ip, MYPORT, &hints, &servinfo)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
+		return 1;
+	}
+    
+	// loop through all the results and bind to the first we can
+	for(p = servinfo; p != NULL; p = p->ai_next) {
+        if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
+            perror("listener: socket");
+            continue;
+        }
+        
+        if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
+            close(sockfd);
+            perror("listener: bind");
+            continue;
+        }
+        
+        break;
+    }
+    
+    if (p == NULL) {
+        fprintf(stderr, "listener: failed to bind socket\n");
+        return 2;
+    }
+    
+    printf("Servidor escutando na porta 8080...\n");
+	freeaddrinfo(servinfo);
+    
     FILE *file = fopen("grafo_random.txt", "r");
     if (!file) {
         perror("Erro ao abrir o arquivo");
@@ -49,71 +94,31 @@ int main(int argc, char *argv[]) {
     }
 
     fclose(file);
-
-    protocol = argv[1];
-
-	memset(&hints, 0, sizeof hints);
-	hints.ai_socktype = SOCK_DGRAM;
-	hints.ai_flags = AI_PASSIVE; // use my IP
-    if(strcmp(protocol, "v4") == 0){
-        hints.ai_family = AF_INET;
-		server_ip = "127.0.0.1";
-    } else if(strcmp(protocol, "v6") == 0){
-        hints.ai_family = AF_INET6;
-		server_ip = "::1";
-    } else {
-        hints.ai_family = AF_UNSPEC; // use IPv4 or IPv6, whichever
-    }
-
-	if ((rv = getaddrinfo(server_ip, MYPORT, &hints, &servinfo)) != 0) {
-		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-		return 1;
-	}
-
-	// loop through all the results and bind to the first we can
-	for(p = servinfo; p != NULL; p = p->ai_next) {
-		if ((sockfd = socket(p->ai_family, p->ai_socktype,
-				p->ai_protocol)) == -1) {
-			perror("listener: socket");
-			continue;
-		}
-
-		if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-			close(sockfd);
-			perror("listener: bind");
-			continue;
-		}
-
-		break;
-	}
-
-	if (p == NULL) {
-		fprintf(stderr, "listener: failed to bind socket\n");
-		return 2;
-	}
-
-	freeaddrinfo(servinfo);
-
-	printf("listener: waiting to recvfrom...\n");
-
+    
     while (1) {
         answer_t msg_recvd;
-        receive_message(sockfd, &their_addr, &addr_len, &msg_recvd);
+        receive_message(sockfd, &their_addr, &addr_len, &msg_recvd, forest_graph);
     
         if(msg_recvd.ack == 0){
-            /* keeps listening untill client transmit again */
+            /* keeps listening until client transmit again */
             continue;
         } else {
             switch (msg_recvd.h.tipo) {
                 case MSG_TELEMETRIA: {
+                    handle_telemetry(&msg_recvd.p_telemetry, &alerts);
+
                     /* SEND ACK */
                     payload_ack_t ack = {0};
                     send_message(sockfd, p, MSG_ACK, &ack, sizeof(payload_ack_t));
-    
-                    handle_telemetry(&msg_recvd.p_telemetry, &alerts);
+                    printf("ACK enviado (tipo=0)\n");
     
                     alert_event_t* current_alert = peek_alert(&alerts);
+                    /* TODO: percorrer a fila até ficar vazia, talvez tenha que dar um pop em vez do peek */
+
                     if(current_alert){
+                        printf("[DESPACHANDO DRONES]\n");
+                        printf("Cidade em alerta: %s (ID=%d)\n", forest_graph->vertices[current_alert->id_cidade].name, current_alert->id_cidade);
+                        
                         int nearestAvailableDroneCrew = findNearestAvailableDroneCrew(forest_graph, current_alert->id_cidade);
                         
                         if(nearestAvailableDroneCrew != -1){
@@ -121,12 +126,16 @@ int main(int argc, char *argv[]) {
     
                             payload_equipe_drone_t equipe = {current_alert->id_cidade, nearestAvailableDroneCrew};
                             send_message(sockfd, p, MSG_EQUIPE_DRONE, &equipe, sizeof(payload_equipe_drone_t));
+
+                            printf("Ordem enviada: Equipe %s (ID=%d) -> Cidade %s (ID=%d)\n", forest_graph->vertices[nearestAvailableDroneCrew].name, nearestAvailableDroneCrew,
+                            forest_graph->vertices[current_alert->id_cidade].name,current_alert->id_cidade );
                         }
                     }
                     
                     break;
                 }
                 case MSG_ACK: {
+                    /* TODO: is this really necessary? */
                     /* if the ACK is ACK_EQUIPE_DRONE, unqueue the alerts first element (drone was already received) */
                     if(msg_recvd.p_ack.status == 1){
                         alert_event_t* current_alert = pop_alert(&alerts);
@@ -142,9 +151,6 @@ int main(int argc, char *argv[]) {
                     forest_graph->vertices[crew].available = 1;
                     break;
                 }
-                default:
-                    printf("Tipo desconhecido!\n");
-                    break;
             }
         }
     }

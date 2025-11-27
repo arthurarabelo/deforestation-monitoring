@@ -108,7 +108,7 @@ void send_message(int sockfd, struct addrinfo *p, MessageType type, void *payloa
     network_to_host_long_payload(payload, type);
 }
 
-void receive_message(int sockfd, struct sockaddr_in *their_addr, socklen_t *addrlen, answer_t *answer) {
+void receive_message(int sockfd, struct sockaddr_in *their_addr, socklen_t *addrlen, answer_t *answer, Graph* graph) {
     char buffer[MAX_BUFFER_SIZE];
 	unsigned long int numbytes;
     char s[INET6_ADDRSTRLEN];
@@ -118,11 +118,8 @@ void receive_message(int sockfd, struct sockaddr_in *their_addr, socklen_t *addr
 		exit(1);
     }
 
-	printf("listener: got packet from %s\n", inet_ntop(their_addr->sin_family, get_in_addr((struct sockaddr *) their_addr), s, sizeof s));
-	printf("listener: packet is %ld bytes long\n", numbytes);
-
     if (numbytes < sizeof(header_t)){
-        /* TODO: message incomplete for sure */
+        /* message incomplete for sure */
         answer->ack = 0;
         return;
     }
@@ -131,10 +128,9 @@ void receive_message(int sockfd, struct sockaddr_in *their_addr, socklen_t *addr
     memcpy(&header, buffer, sizeof(header_t));
     network_to_host_short_header(&header);
     
-    printf("Recebido tipo=%d, tamanho=%d bytes\n", header.tipo, header.tamanho);
     answer->h = header;
 
-    /* TODO: check if the message or some part of it was not lost using the header->tamanho */
+    /* check if the message or some part of it was not lost using the header->tamanho */
     if(header.tamanho > numbytes - sizeof(header_t)){
         fprintf(stderr, "Pacotes foram perdidos na mensagem: esperado %d, recebido %zd\n", header.tamanho, numbytes - sizeof(header_t));
         answer->ack = 0;
@@ -150,9 +146,13 @@ void receive_message(int sockfd, struct sockaddr_in *their_addr, socklen_t *addr
             answer->p_telemetry = p;
             answer->ack = 1;
 
-            printf("Total: %d\n", p.total);
-            for (int i = 0; i < p.total; i++)
-                printf("Cidade %d, status %d\n", p.dados[i].id_cidade, p.dados[i].status);
+            printf("[TELEMETRIA RECEBIDA]");
+            printf("Total de cidades monitoradas: %d\n", answer->p_telemetry.total);
+            for (int i = 0; i < answer->p_telemetry.total; i++) {
+                if(answer->p_telemetry.dados[i].status == 1){
+                    printf("ALERTA: %s (ID=%d)\n", graph->vertices[i].name, i);
+                }
+            }
             break;
         }
         case MSG_ACK: {
@@ -174,7 +174,9 @@ void receive_message(int sockfd, struct sockaddr_in *their_addr, socklen_t *addr
             answer->p_drone = p;
             answer->ack = 1;
 
-            printf("Equipe %d enviada à cidade %d\n", p.id_equipe, p.id_cidade);
+            printf("[ORDEM DE DRONE RECEBIDA]\n");
+            printf("Cidade: %s (ID=%d)\n", graph->vertices[answer->p_drone.id_cidade].name, answer->p_drone.id_cidade);
+            printf("Equipe: %s (ID=%d)\n", graph->vertices[answer->p_drone.id_equipe].name, answer->p_drone.id_equipe);
             break;
         }
         case MSG_CONCLUSAO: {

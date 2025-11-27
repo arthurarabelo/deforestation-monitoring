@@ -16,6 +16,7 @@ int findNearestAvailableDroneCrew(Graph* graph, int src){
         }
     }
 
+    printf("Dijkstra: capital %s (ID=%d) selecionada, distância = %d km\n", graph->vertices[min_dist_id].name, min_dist_id, dist[min_dist_id]);
     return min_dist_id;
 }
 

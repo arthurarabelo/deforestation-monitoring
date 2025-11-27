@@ -16,6 +16,8 @@ pthread_cond_t cond_t4_t3;
 
 uint16_t mission_available = 0;
 uint16_t mission_completed = 0;
+uint16_t mission_city_id = 0;
+uint16_t mission_crew_id = 0;
 uint16_t th4_busy = 0;   // 0 = livre, 1 = ocupada
 
 void* foward_message(void* data){
@@ -26,7 +28,7 @@ void* foward_message(void* data){
 
     while (1) {
         answer_t ans;
-        receive_message(args->sockfd, &their_addr, &addr_len, &ans);
+        receive_message(args->sockfd, &their_addr, &addr_len, &ans, args->graph);
 
         switch (ans.h.tipo) {
             case MSG_EQUIPE_DRONE: {
@@ -91,8 +93,14 @@ void* send_telemetry(void* data){
 
     pthread_mutex_lock(&mutex_build_telemetry);
 
+    printf("[ENVIANDO TELEMETRIA]\n");
+    printf("Total de cidades: %d\n", args->len);
+    
     /* copy the status of the cities to the telemetry payload */
     for (int i = 0; i < args->len; i++) {
+        if(args->arr[i] == 1){
+            printf("ALERTA: %s (ID=%d)\n", args->graph->vertices[i].name, i);
+        }
         args->payload->dados[i].status = args->arr[i];
     }
 
@@ -104,7 +112,9 @@ void* send_telemetry(void* data){
 
         /* internal loop to control attemps and 5s timeout */
         while (attempts < 3 && !received) {
+
             send_message(args->sockfd, args->p, 1, args->payload, sizeof(payload_telemetria_t));
+            printf("Telemetria enviada (tentativa %d/3)\n", attempts + 1);
 
             pthread_mutex_lock(&mutex_ack_telemetry);
 
@@ -114,7 +124,7 @@ void* send_telemetry(void* data){
 
             while (is_answer_queue_empty(args->ack_queue)) {
 
-                /* free mutex and put thread to sleep 'till the signal wakes it up */
+                /* free mutex and put thread to sleep until the signal wakes it up */
                 int ret = pthread_cond_timedwait(&cond_ack_telemetry, &mutex_ack_telemetry, &ts);
                 if (ret == ETIMEDOUT) {
                     attempts++;
@@ -125,12 +135,13 @@ void* send_telemetry(void* data){
             if (!is_answer_queue_empty(args->ack_queue)) {
                 free(pop_answer(args->ack_queue));
                 received = 1;
+                printf("ACK recebido do servidor\n");
             }
 
             pthread_mutex_unlock(&mutex_ack_telemetry);
         }
 
-        /* wait till next 30s cycle */
+        /* wait until next 30s cycle */
         sleep(30);
     }
 
@@ -145,7 +156,7 @@ void* confirm_crew_received(void* data){
     while (1) {
         pthread_mutex_lock(&mutex_equipe_drone);
 
-        /* waits 'till there is a answer in the queue of the MSG_EQUIPE_DRONE answers */
+        /* waits until there is a answer in the queue of the MSG_EQUIPE_DRONE answers */
         while(is_answer_queue_empty(args->answer_queue_t3_drone)){
             pthread_cond_wait(&cond_equipe_drone, &mutex_equipe_drone);
         }
@@ -153,6 +164,7 @@ void* confirm_crew_received(void* data){
         answer_node_t* answer = pop_answer(args->answer_queue_t3_drone);
         id_cidade = answer->data->p_drone.id_cidade;
         id_equipe = answer->data->p_drone.id_equipe;
+
         free(answer);
 
         pthread_mutex_unlock(&mutex_equipe_drone);
@@ -163,17 +175,22 @@ void* confirm_crew_received(void* data){
         pthread_mutex_unlock(&mutex_t4_state);
 
         if (busy) {
-            payload_conclusao_t p = {id_cidade, id_equipe};
-            send_message(args->sockfd, args->p, 4, &p, sizeof(p));
+            send_message(args->sockfd, args->p, 2, args->payload, sizeof(payload_ack_t));
+            printf("ACK enviado ao servidor\n");
+            printf("Já existe missão ativa, ordem ignorada\n");
             continue;
         }
         
         send_message(args->sockfd, args->p, 2, args->payload, sizeof(payload_ack_t));
+        printf("ACK enviado ao servidor\n");
 
         /* th3 and th4 communication - BEGIN */
         pthread_mutex_lock(&mutex_t3_t4);
 
         mission_available = 1;
+        mission_city_id = id_cidade;
+        mission_crew_id = id_equipe;
+        printf("Missão registrada para execução\n");
         pthread_cond_signal(&cond_t3_t4);
 
         while(!mission_completed){
@@ -189,7 +206,7 @@ void* confirm_crew_received(void* data){
         payload_conclusao_t p_conclusao = {id_cidade, id_equipe};
         send_message(args->sockfd, args->p, 4, &p_conclusao, sizeof(payload_conclusao_t));
 
-        /* waits 'till server acknoledges the conclusion */
+        /* waits until server acknoledges the conclusion */
         pthread_mutex_lock(&mutex_ack_conclusao);
         
         while(is_answer_queue_empty(args->answer_queue_t3_ack)){
@@ -202,9 +219,9 @@ void* confirm_crew_received(void* data){
     return NULL;
 }
 
-void* simulate_drones(void* _){
+void* simulate_drones(void* data){
 
-    (void)_;
+    args_t4* args = (args_t4 *) data;
 
     while(1){
         /* th4 and th3 communication - BEGIN */
@@ -223,12 +240,19 @@ void* simulate_drones(void* _){
         
         pthread_mutex_unlock(&mutex_t3_t4);
 
+        printf("[MISSÃO EM ANDAMENTO]\n");
+        printf("Equipe %s atuando em %s\n", args->graph->vertices[mission_crew_id].name, args->graph->vertices[mission_city_id].name);
+
+        int simulation_seconds = rand() % 31;
+        printf("Tempo estimado: %d segundos\n", simulation_seconds);
+
         /* simulate the action of the drone crew */
-        sleep(30);
+        sleep(simulation_seconds);
 
         pthread_mutex_lock(&mutex_t3_t4);
         
         mission_completed = 1;
+        printf("Missão concluída");
         pthread_cond_signal(&cond_t4_t3);
     
         pthread_mutex_unlock(&mutex_t3_t4);

@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include "graph.h"
 
 // Forward declarations
 struct addrinfo;
@@ -77,6 +78,6 @@ void network_to_host_long_payload(void *payload, MessageType type);
 
 void send_message(int sockfd, struct addrinfo *p, MessageType tipo, void *payload, size_t payload_size);
 
-void receive_message(int sockfd, struct sockaddr_in *their_addr, socklen_t *addrlen, answer_t *answer);
+void receive_message(int sockfd, struct sockaddr_in *their_addr, socklen_t *addrlen, answer_t *answer, Graph* graph);
 
 #endif
