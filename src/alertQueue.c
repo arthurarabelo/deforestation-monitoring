@@ -11,7 +11,6 @@ int is_alert_queue_empty(alert_queue_t* q) {
 
 alert_event_t* pop_alert(alert_queue_t* q) {
     if (is_alert_queue_empty(q)) {
-        printf("Queue is empty\n");
         return NULL;
     }
     
@@ -29,7 +28,6 @@ alert_event_t* pop_alert(alert_queue_t* q) {
 
 alert_event_t* peek_alert(alert_queue_t* q){
     if (is_alert_queue_empty(q)) {
-        printf("Queue is empty\n");
         return NULL;
     }
     
@@ -66,7 +64,6 @@ void enqueue_alert(alert_queue_t* q, int id_cidade, int equipe_atuando, time_t t
 
 void dequeue_alert(alert_queue_t* q) {
     if (is_alert_queue_empty(q)) {
-        printf("Queue is empty\n");
         return;
     }
 

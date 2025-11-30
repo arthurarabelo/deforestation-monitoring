@@ -6,6 +6,8 @@
 #include "graph.h"
 #include <pthread.h>
 #include <stdint.h>
+#include <signal.h>
+#include <stdatomic.h>
 
 // External declarations (definitions are in threadsUtils.c)
 extern pthread_mutex_t mutex_build_telemetry;
@@ -24,6 +26,10 @@ extern pthread_cond_t cond_t4_t3;
 extern uint16_t mission_available;
 extern uint16_t mission_completed;
 extern uint16_t th4_busy;   // 0 = livre, 1 = ocupada
+
+extern pthread_barrier_t barrier;
+
+extern volatile sig_atomic_t running;
 
 typedef struct {
     int *arr;

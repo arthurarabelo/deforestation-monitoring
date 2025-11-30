@@ -1,9 +1,11 @@
 #ifndef GRAPH_H
 #define GRAPH_H
 
+#define MAX_CITY_NAME 50
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <string.h>
 
 typedef struct edge {
     int dest;
@@ -12,7 +14,7 @@ typedef struct edge {
 } Edge;
 
 typedef struct vertex {
-    char* name; // name of the city
+    char name[MAX_CITY_NAME]; // name of the city
     int type; // 0 = regional, 1 = capital
     int id_cidade; // identificador da cidade
     int available; // 0 = unavailable, 1 = available

@@ -23,7 +23,7 @@ void host_to_network_long_payload(void *payload, MessageType type){
     switch (type) {
         case MSG_TELEMETRIA: {
             payload_telemetria_t *p = (payload_telemetria_t*) payload;
-            for(int i = 0; i < MAX_SIZE_DADOS_TELEMETRIA; i++){
+            for(int i = 0; i < p->total; i++){
                 p->dados[i].id_cidade = htonl(p->dados[i].id_cidade);
                 p->dados[i].status = htonl(p->dados[i].status);
             }
@@ -54,11 +54,11 @@ void network_to_host_long_payload(void *payload, MessageType type){
     switch (type) {
         case MSG_TELEMETRIA: {
             payload_telemetria_t *p = (payload_telemetria_t*) payload;
-            for(int i = 0; i < MAX_SIZE_DADOS_TELEMETRIA; i++){
+            p->total = ntohl(p->total);
+            for(int i = 0; i < p->total; i++){
                 p->dados[i].id_cidade = ntohl(p->dados[i].id_cidade);
                 p->dados[i].status = ntohl(p->dados[i].status);
             }
-            p->total = ntohl(p->total);
             break;
         }
         case MSG_ACK: {
@@ -81,7 +81,7 @@ void network_to_host_long_payload(void *payload, MessageType type){
     }
 }
 
-void send_message(int sockfd, struct addrinfo *p, MessageType type, void *payload, size_t payload_size){
+void send_message(int sockfd, struct sockaddr *dest, socklen_t addrlen, MessageType type, void *payload, size_t payload_size){
     char buffer[MAX_BUFFER_SIZE];
 	unsigned long int numbytes;
     header_t header;
@@ -89,33 +89,34 @@ void send_message(int sockfd, struct addrinfo *p, MessageType type, void *payloa
     header.tamanho = payload_size;
     size_t total_size = sizeof(header) + payload_size;
     
-    // prevent endianess problemss
+    // Convert endianness: header first, then payload
     host_to_network_short_header(&header);
     host_to_network_long_payload(payload, type);
 
-    // Copia o header e o payload pro buffer
+    // Copy header and payload to buffer
     memcpy(buffer, &header, sizeof(header_t));
     memcpy(buffer + sizeof(header_t), payload, payload_size);
 
-    // Envia tudo num único datagrama
-    if((numbytes = sendto(sockfd, buffer, total_size, 0, (struct sockaddr*) p->ai_addr, p->ai_addrlen)) == (long unsigned int) -1){
+    if((numbytes = sendto(sockfd, buffer, total_size, 0, dest, addrlen)) == (long unsigned int) -1){
         perror("sendto");
 		exit(1);
     }
 
-	printf("talker: sent %ld bytes\n", numbytes);
-
+    // Restore original endianness (payload is restored to original state)
+    network_to_host_short_header(&header);
     network_to_host_long_payload(payload, type);
 }
 
-void receive_message(int sockfd, struct sockaddr_in *their_addr, socklen_t *addrlen, answer_t *answer, Graph* graph) {
+void receive_message(int sockfd, struct sockaddr_storage *their_addr, socklen_t *addrlen, answer_t *answer, Graph* graph) {
     char buffer[MAX_BUFFER_SIZE];
 	unsigned long int numbytes;
-    char s[INET6_ADDRSTRLEN];
+    memset(their_addr, 0, sizeof(struct sockaddr_storage));
+    *addrlen = sizeof(struct sockaddr_storage);
 
     if((numbytes = recvfrom(sockfd, buffer, MAX_BUFFER_SIZE, 0, (struct sockaddr *) their_addr, addrlen)) == (long unsigned int) -1){
-        perror("recvfrom");
-		exit(1);
+        // Return with ack=0 to indicate no message received
+        answer->ack = 0;
+        return;
     }
 
     if (numbytes < sizeof(header_t)){
@@ -139,14 +140,12 @@ void receive_message(int sockfd, struct sockaddr_in *their_addr, socklen_t *addr
     
     switch (header.tipo) {
         case MSG_TELEMETRIA: {
-            payload_telemetria_t p;
-            network_to_host_long_payload(&p, header.tipo);
-            memcpy(&p, buffer + sizeof(header_t), header.tamanho);
+            memcpy(&answer->p_telemetry, buffer + sizeof(header_t), header.tamanho);
+            network_to_host_long_payload(&answer->p_telemetry, header.tipo);
 
-            answer->p_telemetry = p;
             answer->ack = 1;
 
-            printf("[TELEMETRIA RECEBIDA]");
+            printf("[TELEMETRIA RECEBIDA]\n");
             printf("Total de cidades monitoradas: %d\n", answer->p_telemetry.total);
             for (int i = 0; i < answer->p_telemetry.total; i++) {
                 if(answer->p_telemetry.dados[i].status == 1){
@@ -156,38 +155,35 @@ void receive_message(int sockfd, struct sockaddr_in *their_addr, socklen_t *addr
             break;
         }
         case MSG_ACK: {
-            payload_ack_t p;
-            network_to_host_long_payload(&p, header.tipo);
-            memcpy(&p, buffer + sizeof(header_t), header.tamanho);
+            memcpy(&answer->p_ack, buffer + sizeof(header_t), header.tamanho);
+            network_to_host_long_payload(&answer->p_ack, header.tipo);
 
-            answer->p_ack = p;
             answer->ack = 1;
-
-            printf("ACK: %d\n", p.status);
             break;
         }
         case MSG_EQUIPE_DRONE: {
-            payload_equipe_drone_t p;
-            network_to_host_long_payload(&p, header.tipo);
-            memcpy(&p, buffer + sizeof(header_t), header.tamanho);
+            memcpy(&answer->p_drone, buffer + sizeof(header_t), header.tamanho);
+            network_to_host_long_payload(&answer->p_drone, header.tipo);
 
-            answer->p_drone = p;
             answer->ack = 1;
 
             printf("[ORDEM DE DRONE RECEBIDA]\n");
             printf("Cidade: %s (ID=%d)\n", graph->vertices[answer->p_drone.id_cidade].name, answer->p_drone.id_cidade);
-            printf("Equipe: %s (ID=%d)\n", graph->vertices[answer->p_drone.id_equipe].name, answer->p_drone.id_equipe);
+            printf("Equipe: %s (ID=%d)\n\n", graph->vertices[answer->p_drone.id_equipe].name, answer->p_drone.id_equipe);
             break;
         }
         case MSG_CONCLUSAO: {
-            payload_conclusao_t p;
-            network_to_host_long_payload(&p, header.tipo);
-            memcpy(&p, buffer + sizeof(header_t), header.tamanho);
+            memcpy(&answer->p_conclusion, buffer + sizeof(header_t), header.tamanho);
+            network_to_host_long_payload(&answer->p_conclusion, header.tipo);
             
-            answer->p_conclusion = p;
             answer->ack = 1;
 
-            printf("Equipe %d concluiu ajuda em cidade %d\n", p.id_equipe, p.id_cidade);
+            printf("[MISSÃO CONCLUÍDA]\n");
+                    
+            int crew = answer->p_conclusion.id_equipe;
+            int city = answer->p_conclusion.id_cidade;
+            printf("Cidade atendida: %s (ID=%d)\n", graph->vertices[city].name, city);
+            printf("Equipe: %s (ID=%d)\n", graph->vertices[crew].name, crew);
             break;
         }
         default:

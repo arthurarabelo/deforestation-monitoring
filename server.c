@@ -1,14 +1,24 @@
-#include "communication.h"
 #include "utils.h"
+#include <signal.h>
+#include <stdatomic.h>
+#include <fcntl.h>
+#include <errno.h>
 
 #define MYPORT "8080"	// the port users will be connecting to
 #define MAX_CITY_NAME 50
+
+static volatile sig_atomic_t running = 1;
+
+void handle_sigint_server(int sig) {
+    (void)sig;
+    running = 0;
+}
 
 int main(int argc, char *argv[]) {
     int sockfd;
 	struct addrinfo hints, *servinfo, *p;
 	int rv;
-	struct sockaddr_in their_addr;
+	struct sockaddr_storage their_addr;
     socklen_t addr_len = sizeof(their_addr);
 	char *protocol, *server_ip;
     
@@ -16,7 +26,6 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "how to use it: %s <v4|v6>\n", argv[0]);
         exit(1);
     }
-
     
     protocol = argv[1];
     
@@ -44,6 +53,13 @@ int main(int argc, char *argv[]) {
             perror("listener: socket");
             continue;
         }
+
+        /* makes socket nonblocking */
+        fcntl(sockfd, F_SETFL, O_NONBLOCK);
+
+        // lose the pesky "Address already in use" error message
+        int yes = 1;
+        setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes);
         
         if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
             close(sockfd);
@@ -60,9 +76,14 @@ int main(int argc, char *argv[]) {
     }
     
     printf("Servidor escutando na porta 8080...\n");
+    printf("Pressione Ctrl+C para encerrar\n\n");
+    
+    // Register signal handler for graceful shutdown
+    signal(SIGINT, handle_sigint_server);
+    
 	freeaddrinfo(servinfo);
     
-    FILE *file = fopen("grafo_random.txt", "r");
+    FILE *file = fopen("grafoamazonialegal.txt", "r");
     if (!file) {
         perror("Erro ao abrir o arquivo");
         return 1;
@@ -72,6 +93,7 @@ int main(int argc, char *argv[]) {
     fscanf(file, "%d %d", &N, &M);
 
     Graph* forest_graph = createGraph(N);
+    int dist[N];
 
     alert_queue_t alerts;
     initialize_alert_queue(&alerts);
@@ -80,25 +102,26 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < N; i++) {
         int city_id, city_type;
         char city_name[MAX_CITY_NAME];
-        fscanf(file, "%d %s %d", &city_id, city_name, &city_type);
-
+        fscanf(file, "%d %99[^0-9] %d", &city_id, city_name, &city_type);
         setVertexInfo(forest_graph, i, city_name, city_type, city_id);
     }
 
-    // read edges
+    // read edges (graph is undirected, so add edges in both directions)
     for (int i = 0; i < M; i++) {
         int u, v, weight;
         fscanf(file, "%d %d %d", &u, &v, &weight);
-
         addEdge(forest_graph, u, v, weight);
+        addEdge(forest_graph, v, u, weight); // Add reverse edge for undirected graph
     }
 
     fclose(file);
-    
-    while (1) {
+
+    while (running) {
         answer_t msg_recvd;
+        
+        // Try to receive message (non-blocking)
         receive_message(sockfd, &their_addr, &addr_len, &msg_recvd, forest_graph);
-    
+        
         if(msg_recvd.ack == 0){
             /* keeps listening until client transmit again */
             continue;
@@ -109,38 +132,41 @@ int main(int argc, char *argv[]) {
 
                     /* SEND ACK */
                     payload_ack_t ack = {0};
-                    send_message(sockfd, p, MSG_ACK, &ack, sizeof(payload_ack_t));
-                    printf("ACK enviado (tipo=0)\n");
+                    send_message(sockfd, (struct sockaddr *)&their_addr, addr_len, MSG_ACK, &ack, sizeof(payload_ack_t));
+                    printf("ACK enviado (tipo=0)\n\n");
     
                     alert_event_t* current_alert = peek_alert(&alerts);
-                    /* TODO: percorrer a fila até ficar vazia, talvez tenha que dar um pop em vez do peek */
-
-                    if(current_alert){
-                        printf("[DESPACHANDO DRONES]\n");
-                        printf("Cidade em alerta: %s (ID=%d)\n", forest_graph->vertices[current_alert->id_cidade].name, current_alert->id_cidade);
-                        
-                        int nearestAvailableDroneCrew = findNearestAvailableDroneCrew(forest_graph, current_alert->id_cidade);
-                        
-                        if(nearestAvailableDroneCrew != -1){
-                            forest_graph->vertices[nearestAvailableDroneCrew].available = 0;
-    
-                            payload_equipe_drone_t equipe = {current_alert->id_cidade, nearestAvailableDroneCrew};
-                            send_message(sockfd, p, MSG_EQUIPE_DRONE, &equipe, sizeof(payload_equipe_drone_t));
-
-                            printf("Ordem enviada: Equipe %s (ID=%d) -> Cidade %s (ID=%d)\n", forest_graph->vertices[nearestAvailableDroneCrew].name, nearestAvailableDroneCrew,
-                            forest_graph->vertices[current_alert->id_cidade].name,current_alert->id_cidade );
-                        }
-                    }
                     
+                    while (current_alert) {
+                        if(current_alert->equipe_atuando == 0){
+                            int nearestAvailableDroneCrew = findNearestAvailableDroneCrew(forest_graph, current_alert->id_cidade, dist);
+                            
+                            if(nearestAvailableDroneCrew != -1){
+                                printf("[DESPACHANDO DRONES]\n");
+                                printf("Cidade em alerta: %s (ID=%d)\n", forest_graph->vertices[current_alert->id_cidade].name, current_alert->id_cidade);
+                                printf("Dijkstra: capital %s (ID=%d) selecionada, distância = %d km\n", forest_graph->vertices[nearestAvailableDroneCrew].name, nearestAvailableDroneCrew, dist[nearestAvailableDroneCrew]);
+
+                                forest_graph->vertices[nearestAvailableDroneCrew].available = 0;
+                                current_alert->equipe_atuando = 1;
+        
+                                payload_equipe_drone_t equipe = {current_alert->id_cidade, nearestAvailableDroneCrew};
+                                send_message(sockfd, (struct sockaddr *)&their_addr, addr_len, MSG_EQUIPE_DRONE, &equipe, sizeof(payload_equipe_drone_t));
+    
+                                printf("Ordem enviada: Equipe %s (ID=%d) -> Cidade %s (ID=%d)\n\n", forest_graph->vertices[nearestAvailableDroneCrew].name, nearestAvailableDroneCrew,
+                                forest_graph->vertices[current_alert->id_cidade].name,current_alert->id_cidade );
+                            }
+                        }
+                        current_alert = current_alert->next;
+                    }
                     break;
                 }
                 case MSG_ACK: {
-                    /* TODO: is this really necessary? */
                     /* if the ACK is ACK_EQUIPE_DRONE, unqueue the alerts first element (drone was already received) */
                     if(msg_recvd.p_ack.status == 1){
-                        alert_event_t* current_alert = pop_alert(&alerts);
+                        printf("[ACK RECEBIDO]\n");
+                        alert_event_t* current_alert = peek_alert(&alerts);
                         if(current_alert){
-                            free(current_alert);
+                            printf("Cliente confirmou recebimento de ordem de drone para %s\n\n", forest_graph->vertices[current_alert->id_cidade].name);
                         }
                     }
                     break;
@@ -149,14 +175,27 @@ int main(int argc, char *argv[]) {
                     /* mark the crew as available on its corresponding vertex */
                     int crew = msg_recvd.p_conclusion.id_equipe;
                     forest_graph->vertices[crew].available = 1;
+                    printf("Equipe %s liberada para novas missões\n\n", forest_graph->vertices[crew].name);
+
+                    // remove o alerta da fila
+                    free(pop_alert(&alerts));
+
+                    payload_ack_t ack = {2};
+                    send_message(sockfd, (struct sockaddr *)&their_addr, addr_len, MSG_ACK, &ack, sizeof(payload_ack_t));
+                    printf("ACK enviado (tipo=2)\n\n");
                     break;
                 }
             }
         }
     }
     
+    printf("\n[Encerrando servidor...]\n");
+    printf("Liberando recursos...\n");
+    
 	close(sockfd);
     free_alert_queue(&alerts);
     freeGraph(forest_graph);
+    
+    printf("Servidor encerrado com sucesso.\n");
 	return 0;
 }

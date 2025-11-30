@@ -1,8 +1,22 @@
 #include "utils.h"
 #include "threadsUtils.h"
+#include <fcntl.h>
+#include <signal.h>
+#include <stdatomic.h>
 
 #define MAX_CITY_NAME 50
 #define SERVERPORT "8080"
+
+void handle_sigint_threads(int sig) {
+    (void)sig;
+    running = 0;
+
+    pthread_cond_broadcast(&cond_ack_telemetry);
+    pthread_cond_broadcast(&cond_ack_conclusao);
+    pthread_cond_broadcast(&cond_equipe_drone);
+    pthread_cond_broadcast(&cond_t3_t4);
+    pthread_cond_broadcast(&cond_t4_t3);
+}
 
 int main(int argc, char *argv[]){
     srand(time(NULL));
@@ -11,6 +25,8 @@ int main(int argc, char *argv[]){
 	int rv;
     char *protocol, *server_ip;
     char s[INET6_ADDRSTRLEN];
+
+    signal(SIGINT, handle_sigint_threads);
 
     pthread_t thread1, thread2, thread3, thread4, th_dispatcher; /* thread variables */
     answer_queue_t answer_queue_t2;
@@ -66,8 +82,14 @@ int main(int argc, char *argv[]){
             perror("talker: socket");
             continue;
         }
+
+        // Make socket non-blocking to allow checking 'running' flag
+        int flags = fcntl(sockfd, F_GETFL, 0);
+        fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+
         break;
     }
+
     if (p == NULL) {
         fprintf(stderr, "talker: failed to create socket\n");
         return 2;
@@ -77,7 +99,7 @@ int main(int argc, char *argv[]){
 	printf("Cliente conectado ao servidor %s:%s\n", s, SERVERPORT);
 
     /* lê o arquivo do grafo */
-    FILE *file = fopen("grafo_random.txt", "r");
+    FILE *file = fopen("grafoamazonialegal.txt", "r");
     if (!file) {
         perror("Erro ao abrir o arquivo");
         return 1;
@@ -92,13 +114,19 @@ int main(int argc, char *argv[]){
     payload_telemetria_t p_telemetry = {0};
     p_telemetry.total = N;
     
+    // Initialize all telemetry data entries to zero first
+    for (int i = 0; i < MAX_SIZE_DADOS_TELEMETRIA; i++) {
+        p_telemetry.dados[i].id_cidade = 0;
+        p_telemetry.dados[i].status = 0;
+    }
+    
     // read vertices and initialize telemetry
     for (int i = 0; i < N; i++) {
         int city_id, city_type;
         char city_name[MAX_CITY_NAME];
-        fscanf(file, "%d %s %d", &city_id, city_name, &city_type);
-        
+        fscanf(file, "%d %99[^0-9] %d", &city_id, city_name, &city_type);
         setVertexInfo(forest_graph, i, city_name, city_type, city_id);
+        
         telemetria_t telemetry = {city_id, 0};
         p_telemetry.dados[city_id] = telemetry;
     }
@@ -107,15 +135,18 @@ int main(int argc, char *argv[]){
     
     /* global array shared by threads */
     int telemetry_data[N];
+    memset(telemetry_data, 0, sizeof(telemetry_data)); // Initialize to zero
 
+    pthread_barrier_init(&barrier, NULL, 5);
+    
 	printf("Iniciando threads...\n");
     args_dispatcher data_dispatcher = {sockfd, &answer_queue_t2, &answer_queue_t3_ack, &answer_queue_t3_drone, forest_graph};
     pthread_create(&th_dispatcher, NULL, &foward_message, &data_dispatcher);
-
+    
 	printf("[Thread Monitoramento] Iniciada\n");
     args_t1 data_t1 = {telemetry_data, N};
     pthread_create(&thread1, NULL, &modify_telemetry_data, &data_t1);
-
+    
 	printf("[Thread Telemetria] Iniciada\n");
     args_t2 data_t2 = {telemetry_data, N, sockfd, p, &p_telemetry, &answer_queue_t2, forest_graph};
     pthread_create(&thread2, NULL, &send_telemetry, &data_t2);
@@ -127,16 +158,24 @@ int main(int argc, char *argv[]){
 	printf("[Thread Simulação Drones] Iniciada\n");
     args_t4 data_t4 = {forest_graph};
     pthread_create(&thread4, NULL, &simulate_drones, &data_t4);
-
+    
 	printf("Todas as threads iniciadas com sucesso\n");
-	printf("Pressione Ctrl+C para encerrar\n");
+	printf("Pressione Ctrl+C para encerrar\n\n");
 
+    while (running){
+        sleep(1);
+    }
+    
     /* Waits for threads to finish */
     pthread_join(thread1, NULL);
     pthread_join(thread2, NULL);
     pthread_join(thread3, NULL);
     pthread_join(thread4, NULL);
     pthread_join(th_dispatcher, NULL);
+    
+    printf("Liberando recursos...\n");
+
+    pthread_barrier_destroy(&barrier);
     
     /* Destroys mutexes and condition variables */
     pthread_mutex_destroy(&mutex_build_telemetry);
@@ -160,5 +199,7 @@ int main(int argc, char *argv[]){
     freeGraph(forest_graph);
     freeaddrinfo(servinfo);
     close(sockfd);
+    
+    printf("Cliente encerrado com sucesso.\n");
     return 0;
 }

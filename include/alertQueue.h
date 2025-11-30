@@ -6,7 +6,6 @@
 #include <stdlib.h>
 
 /* FIFO QUEUE */
-
 typedef struct alert_event {
     int id_cidade;
     int equipe_atuando; // 0 = no crew in action, 1 = there is a crew in action

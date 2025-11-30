@@ -11,7 +11,6 @@ int is_answer_queue_empty(answer_queue_t* q) {
 
 answer_node_t* pop_answer(answer_queue_t* q) {
     if (is_answer_queue_empty(q)) {
-        printf("Queue is empty\n");
         return NULL;
     }
     answer_node_t* node = q->front;
@@ -28,6 +27,7 @@ answer_node_t* pop_answer(answer_queue_t* q) {
 
 void enqueue_answer(answer_queue_t* q, answer_t* data) {
     answer_node_t* new_element = (answer_node_t *) calloc(1, sizeof(answer_node_t));
+    new_element->data = (answer_t *) malloc(sizeof(answer_t));
     *(new_element->data) = *data;
     
     if (is_answer_queue_empty(q)) {
@@ -41,7 +41,6 @@ void enqueue_answer(answer_queue_t* q, answer_t* data) {
 
 void dequeue_answer(answer_queue_t* q) {
     if (is_answer_queue_empty(q)) {
-        printf("Queue is empty\n");
         return;
     }
 
@@ -61,6 +60,9 @@ void free_answer_queue(answer_queue_t* q){
     while (current) {
         answer_node_t* tmp = current;
         current = current->next;
+        if (tmp->data) {
+            free(tmp->data);
+        }
         free(tmp);
     }
 

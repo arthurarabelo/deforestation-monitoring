@@ -1,7 +1,7 @@
 #include "utils.h"
 
-int findNearestAvailableDroneCrew(Graph* graph, int src){
-    int dist[graph->num_vertices], min_dist = INT_MAX, min_dist_id = -1;
+int findNearestAvailableDroneCrew(Graph* graph, int src, int *dist){
+    int min_dist = INT_MAX, min_dist_id = -1;
 
     dijkstra(graph, src, dist);
 
@@ -16,7 +16,6 @@ int findNearestAvailableDroneCrew(Graph* graph, int src){
         }
     }
 
-    printf("Dijkstra: capital %s (ID=%d) selecionada, distância = %d km\n", graph->vertices[min_dist_id].name, min_dist_id, dist[min_dist_id]);
     return min_dist_id;
 }
 
